@@ -9,7 +9,7 @@ from pydantic_extra_types.phone_numbers import PhoneNumber
 
 class HousingPreference(str, Enum):
     APARTMENT = "apartment"
-    SINGLE_FAMILY_HOME = "single_family_home"
+    SINGLE_FAMILY_HOME = "single family home"
     TOWNHOUSE = "townhouse"
     CONDO = "condo"
     STUDIO = "studio"
@@ -64,6 +64,22 @@ class UserBase(BaseModel):
                     "phone_number": "+1 (201) 555-0100",
                     "housing_preference": "apartment",
                     "listing_group": "zillow",
+                }
+            ]
+        }
+    }
+
+class UserCreate(UserBase):
+    """Creation payload; ID defaults server-side but can be supplied."""
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "name": "Ada Kate",
+                    "email": "ada@gmail.com",
+                    "phone_number": "+1 201 946 0958",
+                    "housing_preference": "single family home",
+                    "listing_group": "facebook",
                 }
             ]
         }
