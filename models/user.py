@@ -36,7 +36,7 @@ class UserBase(BaseModel):
     email: EmailStr = Field(
         ...,
         description="Primary email address.",
-        json_schema_extra={"example": "amaan@example.com"},
+        json_schema_extra={"example": "amaan@gmail.com"},
     )
     phone_number: PhoneNumber = Field(
         ...,
@@ -60,7 +60,7 @@ class UserBase(BaseModel):
                 {
                     "id": "550e8400-e29b-41d4-a716-446655440000",
                     "name": "Amaan Sheikh",
-                    "email": "amaan@example.com",
+                    "email": "amaan@gmail.com",
                     "phone_number": "+1 (201) 555-0100",
                     "housing_preference": "apartment",
                     "listing_group": "zillow",
@@ -105,6 +105,35 @@ class UserUpdate(BaseModel):
                     "phone_number": "+44 20 7000 0000",
                     "housing_preference": "townhouse",
                     "listing_group": "realtor",
+                }
+            ]
+        }
+    }
+
+class UserRead(UserBase):
+    created_at: datetime = Field(
+        default_factory=datetime.utcnow,
+        description="Creation timestamp (UTC).",
+        json_schema_extra={"example": "2025-01-15T10:20:30Z"},
+    )
+    updated_at: datetime = Field(
+        default_factory=datetime.utcnow,
+        description="Last update timestamp (UTC).",
+        json_schema_extra={"example": "2025-01-16T12:00:00Z"},
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "id": "550e8400-e29b-41d4-a716-446655440000",
+                    "name": "Amaan Sheikh",
+                    "email": "amaan@gmail.com",
+                    "phone_number": "+1 (201) 555-0100",
+                    "housing_preference": "apartment",
+                    "listing_group": "zillow",
+                    "created_at": "2025-01-15T10:20:30Z",
+                    "updated_at": "2025-01-16T12:00:00Z",
                 }
             ]
         }
