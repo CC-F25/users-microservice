@@ -4,26 +4,36 @@ import os
 import socket
 from datetime import datetime
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException
-from fastapi import Query, Path
-from typing import Optional
+from fastapi import FastAPI, HTTPException, Query, Path
 
 from models.health import Health
+from models.user import UserCreate, UserRead, UserUpdate, ListingGroup, HousingPreference
 
 port = int(os.environ.get("FASTAPIPORT", 8000))
 
 # -----------------------------------------------------------------------------
 # Fake in-memory "databases"
 # -----------------------------------------------------------------------------
+users: Dict[UUID, UserRead] = {}
 
+# -----------------------------------------------------------------------------
+# FastAPI app
+# -----------------------------------------------------------------------------
 app = FastAPI(
     title="Users API",
-    description="FastAPI app using Pydantic v2 models for Users",
+    description="FastAPI app using Pydantic v2 models for Users Microservice",
     version="0.1.0",
 )
+
+# -----------------------------------------------------------------------------
+# Root
+# -----------------------------------------------------------------------------
+@app.get("/")
+def root():
+    return {"message": "Welcome to the Users API. See /docs for OpenAPI UI."}
 
 # -----------------------------------------------------------------------------
 # Health endpoints
@@ -55,12 +65,77 @@ def get_health_with_path(
 # Users endpoints
 # -----------------------------------------------------------------------------
 
-# -----------------------------------------------------------------------------
-# Root
-# -----------------------------------------------------------------------------
-@app.get("/")
-def root():
-    return {"message": "Welcome to the Users API. See /docs for OpenAPI UI."}
+@app.post("/users", response_model=UserRead, status_code=201)
+def create_user(payload: UserCreate) -> UserRead:
+    """
+    Create a new user. ID is optional in the payload; if not provided, it will
+    be generated server-side.
+    """
+    if payload.id in users:
+        raise HTTPException(status_code=400, detail="User with this ID already exists")
+    record = UserRead(**payload.model_dump())
+    users[record.id] = record
+    return record
+
+
+@app.get("/users", response_model=List[UserRead])
+def list_users(
+    name: Optional[str] = Query(None, description="Filter by exact name"),
+    listing_group: Optional[ListingGroup] = Query(None, description="Filter by listing group"),
+    housing_preference: Optional[HousingPreference] = Query(None, description="Filter by housing preference"),
+    email: Optional[str] = Query(None, description="Filter by email"),) -> List[UserRead]:
+    """
+    List users, optionally filtering by any combination of name, listing_group, housing_preference, and email.
+    All filters are exact match.
+    """
+    
+    results = list(users.values())
+    if name is not None:
+        results = [u for u in results if u.name == name]
+    if listing_group is not None:
+        results = [u for u in results if u.listing_group == listing_group]
+    if housing_preference is not None:
+        results = [u for u in results if u.housing_preference == housing_preference]
+    if email is not None:
+        results = [u for u in results if u.email == email]
+    return results
+
+@app.get("/users/{user_id}", response_model=UserRead)
+def get_user(user_id: UUID) -> UserRead:
+    """
+    Retrieve a user by their ID.
+    """
+    if user_id not in users:
+        raise HTTPException(status_code=404, detail="User not found")
+    return users[user_id]
+
+
+@app.patch("/users/{user_id}", response_model=UserRead)
+def update_user(user_id: UUID, update: UserUpdate) -> UserRead:
+    """
+    Apply a partial update to the user.
+    Only provided fields are modified; others remain unchanged.
+    """
+    if user_id not in users:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    stored = users[user_id].model_dump()
+    stored.update(update.model_dump(exclude_unset=True))
+    stored["updated_at"] = datetime.utcnow()
+
+    users[user_id] = UserRead(**stored)
+    return users[user_id]
+
+
+@app.delete("/users/{user_id}")
+def delete_user(user_id: UUID):
+    """
+    Delete and return a confirmation payload
+    """
+    if user_id not in users:
+        raise HTTPException(status_code=404, detail="User not found")
+    del users[user_id]
+    return {"user_id": str(user_id), "message": "Removed user successfully"}
 
 # -----------------------------------------------------------------------------
 # Entrypoint for `python main.py`
