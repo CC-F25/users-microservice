@@ -84,3 +84,28 @@ class UserCreate(UserBase):
             ]
         }
     }
+
+
+class UserUpdate(BaseModel):
+    """
+    Full replace (PUT) payload; ID comes from path.
+    """
+    name: str = Field(..., description="User's display name.")
+    email: EmailStr = Field(..., description="Primary email address.")
+    phone_number: PhoneNumber = Field(..., description="Primary phone number.")
+    housing_preference: HousingPreference = Field(..., description="Preferred housing type.")
+    listing_group: ListingGroup = Field(..., description="Listing source/segment.")
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "name": "Ada Lovelace",
+                    "email": "ada@gmail.com",
+                    "phone_number": "+44 20 7000 0000",
+                    "housing_preference": "townhouse",
+                    "listing_group": "realtor",
+                }
+            ]
+        }
+    }
