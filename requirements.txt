@@ -13,3 +13,4 @@ starlette==0.47.3
 typing-inspection==0.4.1
 typing_extensions==4.15.0
 uvicorn==0.35.0
+pydantic-extra-types==2.10.6
