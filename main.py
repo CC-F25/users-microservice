@@ -4,33 +4,39 @@ import os
 import socket
 from datetime import datetime
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException
-from fastapi import Query, Path
-from typing import Optional
+from fastapi import FastAPI, HTTPException, Query, Path
 
-from models.person import PersonCreate, PersonRead, PersonUpdate
-from models.address import AddressCreate, AddressRead, AddressUpdate
 from models.health import Health
+from models.user import UserCreate, UserRead, UserUpdate, ListingGroup, HousingPreference
 
 port = int(os.environ.get("FASTAPIPORT", 8000))
 
 # -----------------------------------------------------------------------------
 # Fake in-memory "databases"
 # -----------------------------------------------------------------------------
-persons: Dict[UUID, PersonRead] = {}
-addresses: Dict[UUID, AddressRead] = {}
+users: Dict[UUID, UserRead] = {}
 
+# -----------------------------------------------------------------------------
+# FastAPI app
+# -----------------------------------------------------------------------------
 app = FastAPI(
-    title="Person/Address API",
-    description="Demo FastAPI app using Pydantic v2 models for Person and Address",
+    title="Users API",
+    description="FastAPI app using Pydantic v2 models for Users Microservice",
     version="0.1.0",
 )
 
 # -----------------------------------------------------------------------------
-# Address endpoints
+# Root
+# -----------------------------------------------------------------------------
+@app.get("/")
+def root():
+    return {"message": "Welcome to the Users API. See /docs for OpenAPI UI."}
+
+# -----------------------------------------------------------------------------
+# Health endpoints
 # -----------------------------------------------------------------------------
 
 def make_health(echo: Optional[str], path_echo: Optional[str]=None) -> Health:
@@ -55,116 +61,81 @@ def get_health_with_path(
 ):
     return make_health(echo=echo, path_echo=path_echo)
 
-@app.post("/addresses", response_model=AddressRead, status_code=201)
-def create_address(address: AddressCreate):
-    if address.id in addresses:
-        raise HTTPException(status_code=400, detail="Address with this ID already exists")
-    addresses[address.id] = AddressRead(**address.model_dump())
-    return addresses[address.id]
-
-@app.get("/addresses", response_model=List[AddressRead])
-def list_addresses(
-    street: Optional[str] = Query(None, description="Filter by street"),
-    city: Optional[str] = Query(None, description="Filter by city"),
-    state: Optional[str] = Query(None, description="Filter by state/region"),
-    postal_code: Optional[str] = Query(None, description="Filter by postal code"),
-    country: Optional[str] = Query(None, description="Filter by country"),
-):
-    results = list(addresses.values())
-
-    if street is not None:
-        results = [a for a in results if a.street == street]
-    if city is not None:
-        results = [a for a in results if a.city == city]
-    if state is not None:
-        results = [a for a in results if a.state == state]
-    if postal_code is not None:
-        results = [a for a in results if a.postal_code == postal_code]
-    if country is not None:
-        results = [a for a in results if a.country == country]
-
-    return results
-
-@app.get("/addresses/{address_id}", response_model=AddressRead)
-def get_address(address_id: UUID):
-    if address_id not in addresses:
-        raise HTTPException(status_code=404, detail="Address not found")
-    return addresses[address_id]
-
-@app.patch("/addresses/{address_id}", response_model=AddressRead)
-def update_address(address_id: UUID, update: AddressUpdate):
-    if address_id not in addresses:
-        raise HTTPException(status_code=404, detail="Address not found")
-    stored = addresses[address_id].model_dump()
-    stored.update(update.model_dump(exclude_unset=True))
-    addresses[address_id] = AddressRead(**stored)
-    return addresses[address_id]
-
 # -----------------------------------------------------------------------------
-# Person endpoints
+# Users endpoints
 # -----------------------------------------------------------------------------
-@app.post("/persons", response_model=PersonRead, status_code=201)
-def create_person(person: PersonCreate):
-    # Each person gets its own UUID; stored as PersonRead
-    person_read = PersonRead(**person.model_dump())
-    persons[person_read.id] = person_read
-    return person_read
 
-@app.get("/persons", response_model=List[PersonRead])
-def list_persons(
-    uni: Optional[str] = Query(None, description="Filter by Columbia UNI"),
-    first_name: Optional[str] = Query(None, description="Filter by first name"),
-    last_name: Optional[str] = Query(None, description="Filter by last name"),
-    email: Optional[str] = Query(None, description="Filter by email"),
-    phone: Optional[str] = Query(None, description="Filter by phone number"),
-    birth_date: Optional[str] = Query(None, description="Filter by date of birth (YYYY-MM-DD)"),
-    city: Optional[str] = Query(None, description="Filter by city of at least one address"),
-    country: Optional[str] = Query(None, description="Filter by country of at least one address"),
-):
-    results = list(persons.values())
+@app.post("/users", response_model=UserRead, status_code=201)
+def create_user(payload: UserCreate) -> UserRead:
+    """
+    Create a new user. ID is optional in the payload; if not provided, it will
+    be generated server-side.
+    """
+    if payload.id in users:
+        raise HTTPException(status_code=400, detail="User with this ID already exists")
+    record = UserRead(**payload.model_dump())
+    users[record.id] = record
+    return record
 
-    if uni is not None:
-        results = [p for p in results if p.uni == uni]
-    if first_name is not None:
-        results = [p for p in results if p.first_name == first_name]
-    if last_name is not None:
-        results = [p for p in results if p.last_name == last_name]
+
+@app.get("/users", response_model=List[UserRead])
+def list_users(
+    name: Optional[str] = Query(None, description="Filter by exact name"),
+    listing_group: Optional[ListingGroup] = Query(None, description="Filter by listing group"),
+    housing_preference: Optional[HousingPreference] = Query(None, description="Filter by housing preference"),
+    email: Optional[str] = Query(None, description="Filter by email"),) -> List[UserRead]:
+    """
+    List users, optionally filtering by any combination of name, listing_group, housing_preference, and email.
+    All filters are exact match.
+    """
+    
+    results = list(users.values())
+    if name is not None:
+        results = [u for u in results if u.name == name]
+    if listing_group is not None:
+        results = [u for u in results if u.listing_group == listing_group]
+    if housing_preference is not None:
+        results = [u for u in results if u.housing_preference == housing_preference]
     if email is not None:
-        results = [p for p in results if p.email == email]
-    if phone is not None:
-        results = [p for p in results if p.phone == phone]
-    if birth_date is not None:
-        results = [p for p in results if str(p.birth_date) == birth_date]
-
-    # nested address filtering
-    if city is not None:
-        results = [p for p in results if any(addr.city == city for addr in p.addresses)]
-    if country is not None:
-        results = [p for p in results if any(addr.country == country for addr in p.addresses)]
-
+        results = [u for u in results if u.email == email]
     return results
 
-@app.get("/persons/{person_id}", response_model=PersonRead)
-def get_person(person_id: UUID):
-    if person_id not in persons:
-        raise HTTPException(status_code=404, detail="Person not found")
-    return persons[person_id]
+@app.get("/users/{user_id}", response_model=UserRead)
+def get_user(user_id: UUID) -> UserRead:
+    """
+    Retrieve a user by their ID.
+    """
+    if user_id not in users:
+        raise HTTPException(status_code=404, detail="User not found")
+    return users[user_id]
 
-@app.patch("/persons/{person_id}", response_model=PersonRead)
-def update_person(person_id: UUID, update: PersonUpdate):
-    if person_id not in persons:
-        raise HTTPException(status_code=404, detail="Person not found")
-    stored = persons[person_id].model_dump()
+
+@app.patch("/users/{user_id}", response_model=UserRead)
+def update_user(user_id: UUID, update: UserUpdate) -> UserRead:
+    """
+    Apply a partial update to the user.
+    Only provided fields are modified; others remain unchanged.
+    """
+    if user_id not in users:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    stored = users[user_id].model_dump()
     stored.update(update.model_dump(exclude_unset=True))
-    persons[person_id] = PersonRead(**stored)
-    return persons[person_id]
+    stored["updated_at"] = datetime.utcnow()
 
-# -----------------------------------------------------------------------------
-# Root
-# -----------------------------------------------------------------------------
-@app.get("/")
-def root():
-    return {"message": "Welcome to the Person/Address API. See /docs for OpenAPI UI."}
+    users[user_id] = UserRead(**stored)
+    return users[user_id]
+
+
+@app.delete("/users/{user_id}")
+def delete_user(user_id: UUID):
+    """
+    Delete and return a confirmation payload
+    """
+    if user_id not in users:
+        raise HTTPException(status_code=404, detail="User not found")
+    del users[user_id]
+    return {"user_id": str(user_id), "message": "Removed user successfully"}
 
 # -----------------------------------------------------------------------------
 # Entrypoint for `python main.py`
