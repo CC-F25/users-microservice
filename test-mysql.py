@@ -65,14 +65,16 @@ def show_databases():
             connection.close()
 
 def insert_dummy_data():
-    """Connects to the target database, creates the 'users' table, and inserts 5 dummy records only if the table is empty."""
+    """
+    Connects to the target database, creates the 'test_users' table, and inserts 5 dummy records only if the table is empty
+    """
     
-    print(f"\n--- Database Initialization: '{MYSQL_DATABASE}.users' ---")
+    print(f"\n--- Database Initialization: '{MYSQL_DATABASE}.test_users' ---")
     connection = get_connection(db_name=MYSQL_DATABASE)
 
-    # Define the DDL for the 'users' table (using appropriate VARCHAR lengths)
+    # Define the DDL for the 'test_users' table 
     CREATE_TABLE_SQL = f"""
-    CREATE TABLE IF NOT EXISTS users ( 
+    CREATE TABLE IF NOT EXISTS test_users ( 
         id INT AUTO_INCREMENT PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
         email VARCHAR(255),
@@ -89,23 +91,23 @@ def insert_dummy_data():
         ("Ben Smith", "ben@example.com", "+1 555 123 4567", "apartment", "google_ads"),
         ("Clara Diaz", "clara@work.net", "+44 207 111 2222", "condo", "referral"),
         ("David Lee", "david@web.org", "+61 400 987 654", "townhouse", "linkedin"),
-        ("Eva Green", "eva@mail.co", "+33 1 23 45 67 89", "studio", "facebook"),
+        ("Eva Green", "eva@mail.com", "+33 1 23 45 67 89", "studio", "facebook"),
     ]
     
     # Define the INSERT statement
     INSERT_SQL = """
-    INSERT INTO users (name, email, phone_number, housing_preference, listing_group) 
+    INSERT INTO test_users (name, email, phone_number, housing_preference, listing_group) 
     VALUES (%s, %s, %s, %s, %s);
     """
     
     try:
         with connection.cursor() as cursor:
-            # Execute DDL to ensure the 'users' table exists
+            # Execute DDL to ensure the 'test_users' table exists
             cursor.execute(CREATE_TABLE_SQL)
             connection.commit()
             
             # Check the current number of rows to avoid duplication
-            cursor.execute("SELECT COUNT(*) FROM users;")
+            cursor.execute("SELECT COUNT(*) FROM test_users;")
             row_count = cursor.fetchone()[0]
 
             if row_count == 0:
