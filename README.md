@@ -9,6 +9,11 @@ Users Microservice
 - create a venv or conda environment
 - `pip install requirements.txt`
 
+# Env file-
+
+- rename .sample-env to .env
+- fill in the required parameters
+
 # Program Execution
 
 when using conda .env

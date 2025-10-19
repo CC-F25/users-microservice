@@ -9,7 +9,7 @@ MYSQL_HOST = os.getenv("MYSQL_HOST")
 MYSQL_USER = os.getenv("MYSQL_USER")
 MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD")
 MYSQL_PORT = int(os.getenv("MYSQL_PORT", 3306))
-MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "test_db")
+MYSQL_DATABASE = os.getenv("MYSQL_DB", "test_db")
 
 
 def get_connection(db_name=None):
