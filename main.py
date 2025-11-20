@@ -28,6 +28,20 @@ app = FastAPI(
     version="0.1.0",
 )
 
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5000",                     # Firebase local emulator
+        "https://cloud-computing-ui.web.app",        # deployed Firebase site
+        "https://cloud-computing-ui.firebaseapp.com" # alt Firebase domain
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # -----------------------------------------------------------------------------
 # Root
 # -----------------------------------------------------------------------------
