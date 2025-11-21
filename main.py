@@ -36,7 +36,6 @@ app = FastAPI(
     version="0.1.0",
 )
 
-
 from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
