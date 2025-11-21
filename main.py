@@ -7,17 +7,25 @@ from datetime import datetime
 from typing import Dict, List, Optional
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException, Query, Path
+from fastapi import FastAPI, HTTPException, Query, Path, Depends
+from sqlalchemy.orm import Session
 
+# Import Pydantic Models
 from models.health import Health
 from models.user import UserCreate, UserRead, UserUpdate, ListingGroup, HousingPreference
+
+# Import Database connection and SQL Model
+from database import Base, engine, get_db
+from models.user_sql import UserDB
 
 port = int(os.environ.get("FASTAPIPORT", 8000))
 
 # -----------------------------------------------------------------------------
-# Fake in-memory "databases"
+# Database setup
 # -----------------------------------------------------------------------------
-users: Dict[UUID, UserRead] = {}
+
+# This creates the table automatically if it doesn't exist
+Base.metadata.create_all(bind=engine)
 
 # -----------------------------------------------------------------------------
 # FastAPI app
@@ -26,6 +34,21 @@ app = FastAPI(
     title="Users API",
     description="FastAPI app using Pydantic v2 models for Users Microservice",
     version="0.1.0",
+)
+
+
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5000",                     # Firebase local emulator
+        "https://cloud-computing-ui.web.app",        # deployed Firebase site
+        "https://cloud-computing-ui.firebaseapp.com" # alt Firebase domain
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # -----------------------------------------------------------------------------
@@ -66,16 +89,33 @@ def get_health_with_path(
 # -----------------------------------------------------------------------------
 
 @app.post("/users", response_model=UserRead, status_code=201)
-def create_user(payload: UserCreate) -> UserRead:
+def create_user(payload: UserCreate, db: Session = Depends(get_db)):
     """
     Create a new user. ID is optional in the payload; if not provided, it will
     be generated server-side.
     """
-    if payload.id in users:
+    # check if ID already exists
+    if db.query(UserDB).filter(UserDB.id == str(payload.id)).first():
         raise HTTPException(status_code=400, detail="User with this ID already exists")
-    record = UserRead(**payload.model_dump())
-    users[record.id] = record
-    return record
+
+    # check if Email already exists
+    if db.query(UserDB).filter(UserDB.email == payload.email).first():
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    # create SQL Model using the payload's ID
+    new_user = UserDB(
+        id=str(payload.id),
+        name=payload.name,
+        email=payload.email,
+        phone_number=payload.phone_number,
+        housing_preference=payload.housing_preference.value,
+        listing_group=payload.listing_group.value
+    )
+    
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
 
 
 @app.get("/users", response_model=List[UserRead])

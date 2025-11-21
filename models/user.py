@@ -123,6 +123,7 @@ class UserRead(UserBase):
     )
 
     model_config = {
+        "from_attributes": True,
         "json_schema_extra": {
             "examples": [
                 {
