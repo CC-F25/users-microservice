@@ -2,15 +2,18 @@ import pymysql
 import os
 import sys
 from dotenv import load_dotenv
+from pathlib import Path
 
-load_dotenv()
+# Explicitly tell it to look for .env in the parent (root) directory
+env_path = Path(__file__).parent.parent / '.env'
+load_dotenv(dotenv_path=env_path)
+
 # Define constants for connection details
 MYSQL_HOST = os.getenv("MYSQL_HOST")
 MYSQL_USER = os.getenv("MYSQL_USER")
 MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD")
 MYSQL_PORT = int(os.getenv("MYSQL_PORT", 3306))
 MYSQL_DATABASE = os.getenv("MYSQL_DB", "test_db")
-
 
 def get_connection(db_name=None):
     """
