@@ -27,14 +27,14 @@ DUMMY_USERS = [
     {
         "name": "Ben Smith",
         "email": "ben@example.com",
-        "phone_number": "+15551234567",
+        "phone_number": "+1 831 123 4567",
         "housing_preference": HousingPreference.APARTMENT.value,
         "listing_group": ListingGroup.ZILLOW.value
     },
     {
         "name": "Clara Diaz",
         "email": "clara@work.net",
-        "phone_number": "+442071112222",
+        "phone_number": "+44 207 111 2222",
         "housing_preference": "condo",
         "listing_group": "realtor"
     }
