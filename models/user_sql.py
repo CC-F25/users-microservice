@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String, DateTime
-from database import Base
+from database_connection import Base
 import uuid
 from datetime import datetime
 

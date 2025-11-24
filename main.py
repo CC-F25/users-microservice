@@ -9,13 +9,14 @@ from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Query, Path, Depends
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 # Import Pydantic Models
 from models.health import Health
 from models.user import UserCreate, UserRead, UserUpdate, ListingGroup, HousingPreference
 
 # Import Database connection and SQL Model
-from database import Base, engine, get_db
+from database_connection import Base, engine, get_db
 from models.user_sql import UserDB
 
 port = int(os.environ.get("FASTAPIPORT", 8000))
@@ -53,9 +54,32 @@ app.add_middleware(
 # -----------------------------------------------------------------------------
 # Root
 # -----------------------------------------------------------------------------
+
 @app.get("/")
 def root():
-    return {"message": "Welcome to the Users API. See /docs for OpenAPI UI."}
+    return {
+        "message": "Welcome to the Users API.",
+        "documentation": "/docs",
+        "endpoints": {
+            "list_users": "/users", 
+            "create_user": "/users",
+            "health": "/health",
+            "test_db": "/test-db"
+        }
+    }
+
+# -----------------------------------------------------------------------------
+# test-db endpoint
+# -----------------------------------------------------------------------------
+
+@app.get("/test-db")
+def test_db_connection(db: Session = Depends(get_db)):
+    try:
+        # run a simple query to test the connection
+        result = db.execute(text("SELECT 1")).fetchone()
+        return {"status": "success", "result": result[0]}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 # -----------------------------------------------------------------------------
 # Health endpoints
@@ -106,11 +130,12 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db)):
         id=str(payload.id),
         name=payload.name,
         email=payload.email,
-        phone_number=payload.phone_number,
+        phone_number=str(payload.phone_number).replace("tel:", ""),
         housing_preference=payload.housing_preference.value,
         listing_group=payload.listing_group.value
     )
     
+    # add and commit to DB
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
@@ -127,7 +152,7 @@ def list_users(
     db: Session = Depends(get_db)
     ) -> List[UserRead]:
     """
-    List users, optionally filtering by any combination of name, listing_group, housing_preference, and email.
+    List all users, optionally filtering by any combination of name, listing_group, housing_preference, and email.
     All filters are exact match.
     """
     query = db.query(UserDB)
@@ -176,6 +201,10 @@ def update_user(user_id: UUID, update: UserUpdate, db: Session = Depends(get_db)
     for key, value in update_data.items():
         if hasattr(value, 'value'):
             value = value.value
+
+        if key == "phone_number":
+            value = str(value).replace("tel:", "")
+
         setattr(user, key, value)
 
     user.updated_at = datetime.utcnow()
