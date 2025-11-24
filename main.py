@@ -9,6 +9,7 @@ from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Query, Path, Depends
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 # Import Pydantic Models
 from models.health import Health
@@ -56,6 +57,19 @@ app.add_middleware(
 @app.get("/")
 def root():
     return {"message": "Welcome to the Users API. See /docs for OpenAPI UI."}
+
+# -----------------------------------------------------------------------------
+# test-db endpoint
+# -----------------------------------------------------------------------------
+
+@app.get("/test-db")
+def test_db_connection(db: Session = Depends(get_db)):
+    try:
+        # run a simple query to test the connection
+        result = db.execute(text("SELECT 1")).fetchone()
+        return {"status": "success", "result": result[0]}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 # -----------------------------------------------------------------------------
 # Health endpoints
