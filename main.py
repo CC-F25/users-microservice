@@ -16,7 +16,7 @@ from models.health import Health
 from models.user import UserCreate, UserRead, UserUpdate, ListingGroup, HousingPreference
 
 # Import Database connection and SQL Model
-from database import Base, engine, get_db
+from database_connection import Base, engine, get_db
 from models.user_sql import UserDB
 
 port = int(os.environ.get("FASTAPIPORT", 8000))
@@ -54,9 +54,19 @@ app.add_middleware(
 # -----------------------------------------------------------------------------
 # Root
 # -----------------------------------------------------------------------------
+
 @app.get("/")
 def root():
-    return {"message": "Welcome to the Users API. See /docs for OpenAPI UI."}
+    return {
+        "message": "Welcome to the Users API. . See /docs for OpenAPI UI.",
+        "documentation": "/docs",
+        "endpoints": {
+            "list_users": "/users", 
+            "create_user": "/users",
+            "health": "/health",
+            "test_db": "/test-db"
+        }
+    }
 
 # -----------------------------------------------------------------------------
 # test-db endpoint
@@ -141,7 +151,7 @@ def list_users(
     db: Session = Depends(get_db)
     ) -> List[UserRead]:
     """
-    List users, optionally filtering by any combination of name, listing_group, housing_preference, and email.
+    List all users, optionally filtering by any combination of name, listing_group, housing_preference, and email.
     All filters are exact match.
     """
     query = db.query(UserDB)
