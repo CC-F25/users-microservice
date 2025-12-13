@@ -3,11 +3,13 @@
 # Program Description
 Users Microservice
 
+An atomic microservice of the bookings platform app.
+
 # Installation
 
 - python 3.10+
 - create a venv or conda environment
-- `pip install requirements.txt`
+- `pip install -r requirements.txt`
 
 # Env file-
 
