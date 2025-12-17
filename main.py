@@ -19,6 +19,60 @@ from models.user import UserCreate, UserRead, UserUpdate, ListingGroup, HousingP
 from database_connection import Base, engine, get_db
 from models.user_sql import UserDB
 
+# Google auth
+from jose import jwt, JWTError
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
+import uuid, time
+from fastapi import Header, HTTPException, Depends
+from dotenv import load_dotenv
+from google.cloud import pubsub_v1
+import json
+import time
+load_dotenv()
+
+JWT_SECRET = os.environ["JWT_SECRET"]
+JWT_ALGO = "HS256"
+JWT_EXP_SECONDS = 3600
+GOOGLE_CLIENT_ID = os.environ["GOOGLE_CLIENT_ID"]
+PUBSUB_PROJECT = os.getenv("GCP_PROJECT_ID")
+PUBSUB_TOPIC = os.getenv("PUBSUB_TOPIC")
+
+
+
+def generate_jwt(user_id: str, email: str):
+    now = int(time.time())
+    payload = {"sub": user_id, "email": email, "iat": now, "exp": now + JWT_EXP_SECONDS}
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
+
+def require_auth(authorization: str = Header(None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or malformed Authorization header")
+    token = authorization.replace("Bearer ", "")
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
+        return payload
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
+publisher = pubsub_v1.PublisherClient()
+topic_path = publisher.topic_path(PUBSUB_PROJECT, PUBSUB_TOPIC)
+def publish_user_event(event_type: str, payload: dict):
+    """
+    Publishes a JSON event to Google Pub/Sub.
+    Works locally (if GOOGLE_APPLICATION_CREDENTIALS is set) or on Cloud Run.
+    """
+    message = json.dumps({
+        "event_type": event_type,
+        "timestamp": int(time.time()),
+        "payload": payload
+    }).encode("utf-8")
+
+    future = publisher.publish(topic_path, message)
+    print(f"Published event {event_type}, message ID: {future.result()}")
+
+
 port = int(os.environ.get("FASTAPIPORT", 8000))
 
 # -----------------------------------------------------------------------------
@@ -80,6 +134,50 @@ def test_db_connection(db: Session = Depends(get_db)):
         return {"status": "success", "result": result[0]}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+    
+# -----------------------------------------------------------------------------
+# google auth endpoint
+# -----------------------------------------------------------------------------
+    
+@app.post("/auth/google")
+def google_login(google_token: str, db: Session = Depends(get_db)):
+    """
+    Accepts Google ID token, verifies it, creates user if needed,
+    returns our own JWT.
+    """
+    try:
+        google_info = id_token.verify_oauth2_token(
+            google_token,
+            google_requests.Request(),
+            GOOGLE_CLIENT_ID
+        )
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid Google token")
+
+    email = google_info["email"]
+    name = google_info.get("name", "Unknown User")
+
+    # Find or create user in DB
+    user = db.query(UserDB).filter(UserDB.email == email).first()
+    if not user:
+        user = UserDB(
+            id=str(uuid.uuid4()),
+            name=name,
+            email=email,
+            phone_number=None,
+            housing_preference="none",
+            listing_group="none"
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    jwt_token = generate_jwt(user.id, user.email)
+    return {
+        "jwt": jwt_token,
+        "user": {"id": user.id, "email": user.email, "name": user.name}
+    }
+
 
 # -----------------------------------------------------------------------------
 # Health endpoints
@@ -139,6 +237,10 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db)):
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+    
+    # pub/sub
+    publish_user_event("USER_CREATED", {"id": new_user.id, "email": new_user.email})
+
     return new_user
 
 @app.get("/users", response_model=List[UserRead])
@@ -210,6 +312,10 @@ def update_user(user_id: UUID, update: UserUpdate, db: Session = Depends(get_db)
     user.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(user)
+
+    # pub/sub
+    publish_user_event("USER_UPDATED", {"id": user.id})
+
     return user
 
 @app.delete("/users/{user_id}")
@@ -223,6 +329,11 @@ def delete_user(user_id: UUID, db: Session = Depends(get_db)):
     
     db.delete(user)
     db.commit()
+
+    # pub/sub
+    publish_user_event("USER_DELETED", {"id": str(user_id)})
+
+
     return {"message": "User deleted successfully"}
 
 # -----------------------------------------------------------------------------

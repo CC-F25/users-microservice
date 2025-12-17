@@ -16,6 +16,10 @@ uvicorn==0.35.0
 phonenumbers==9.0.16
 pydantic-extra-types==2.10.6
 httpx==0.28.1
-SQLAlchemy==2.0.44
 pymysql==1.1.2
 python-dotenv==1.2.1
+python-jose[cryptography]==3.3.0
+google-auth==2.29.0
+google-cloud-pubsub==2.21.0
+proto-plus==1.23.0 
+protobuf==4.25.3
