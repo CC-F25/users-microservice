@@ -1,26 +1,10 @@
 from __future__ import annotations
 
-from enum import Enum
 from typing import Optional
 from uuid import UUID, uuid4
 from datetime import datetime
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, ConfigDict
 from pydantic_extra_types.phone_numbers import PhoneNumber
-
-class HousingPreference(str, Enum):
-    APARTMENT = "apartment"
-    SINGLE_FAMILY_HOME = "single family home"
-    TOWNHOUSE = "townhouse"
-    CONDO = "condo"
-    STUDIO = "studio"
-    OTHER = "other"
-
-class ListingGroup(str, Enum):
-    FACEBOOK = "facebook"
-    ZILLOW = "zillow"
-    CRAIGSLIST = "craigslist"
-    REALTOR = "realtor"
-    OTHER = "other"
 
 class UserBase(BaseModel):
     id: UUID = Field(
@@ -38,104 +22,77 @@ class UserBase(BaseModel):
         description="Primary email address.",
         json_schema_extra={"example": "amaan@gmail.com"},
     )
-    phone_number: PhoneNumber = Field(
-        ...,
-        description="Primary phone number (lenient validation).",
+    
+    phone_number: Optional[PhoneNumber] = Field(
+        default=None,
+        description="Primary phone number.",
         json_schema_extra={"example": "+1 (201) 555-0100"},
     )
-    housing_preference: HousingPreference = Field(
-        ...,
-        description="Preferred housing type.",
-        json_schema_extra={"example": HousingPreference.APARTMENT.value},
+
+    bio: Optional[str] = Field(
+        default=None,
+        description="Short bio or about me.",
+        json_schema_extra={"example": "Student at Columbia. Quiet and clean."},
     )
-    listing_group: ListingGroup = Field(
-        ...,
-        description="Listing source/segment.",
-        json_schema_extra={"example": ListingGroup.ZILLOW.value},
+    location: Optional[str] = Field(
+        default=None,
+        description="Current city/location.",
+        json_schema_extra={"example": "New York, NY"},
     )
 
-    model_config = {
-        "json_schema_extra": {
+    model_config = ConfigDict(
+        json_schema_extra={
             "examples": [
                 {
                     "id": "550e8400-e29b-41d4-a716-446655440000",
                     "name": "Amaan Sheikh",
                     "email": "amaan@gmail.com",
                     "phone_number": "+1 (201) 555-0100",
-                    "housing_preference": "apartment",
-                    "listing_group": "zillow",
+                    "bio": "CS Grad Student",
+                    "location": "New York, NY"
                 }
             ]
         }
-    }
+    )
 
 class UserCreate(UserBase):
-    """Creation payload; ID defaults server-side but can be supplied."""
-    model_config = {
-        "json_schema_extra": {
-            "examples": [
-                {
-                    "name": "Ada Kate",
-                    "email": "ada@gmail.com",
-                    "phone_number": "+1 201 946 0958",
-                    "housing_preference": "single family home",
-                    "listing_group": "facebook",
-                }
-            ]
-        }
-    }
-
+    """Creation payload."""
+    pass
 
 class UserUpdate(BaseModel):
     """
-    Full replace (PUT) payload; ID comes from path.
+    Partial update (PATCH) payload. All fields are optional.
     """
-    name: str = Field(..., description="User's display name.")
-    email: EmailStr = Field(..., description="Primary email address.")
-    phone_number: PhoneNumber = Field(..., description="Primary phone number.")
-    housing_preference: HousingPreference = Field(..., description="Preferred housing type.")
-    listing_group: ListingGroup = Field(..., description="Listing source/segment.")
-
-    model_config = {
-        "json_schema_extra": {
-            "examples": [
-                {
-                    "name": "Ada Lovelace",
-                    "email": "ada@gmail.com",
-                    "phone_number": "+44 20 7000 0000",
-                    "housing_preference": "townhouse",
-                    "listing_group": "realtor",
-                }
-            ]
-        }
-    }
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone_number: Optional[PhoneNumber] = None
+    bio: Optional[str] = None
+    location: Optional[str] = None
 
 class UserRead(UserBase):
     created_at: datetime = Field(
         default_factory=datetime.utcnow,
         description="Creation timestamp (UTC).",
-        json_schema_extra={"example": "2025-01-15T10:20:30Z"},
     )
     updated_at: datetime = Field(
         default_factory=datetime.utcnow,
         description="Last update timestamp (UTC).",
-        json_schema_extra={"example": "2025-01-16T12:00:00Z"},
     )
 
-    model_config = {
-        "from_attributes": True,
-        "json_schema_extra": {
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
             "examples": [
                 {
                     "id": "550e8400-e29b-41d4-a716-446655440000",
                     "name": "Amaan Sheikh",
                     "email": "amaan@gmail.com",
                     "phone_number": "+1 (201) 555-0100",
-                    "housing_preference": "apartment",
-                    "listing_group": "zillow",
+                    "bio": "CS Grad Student",
+                    "location": "New York, NY",
                     "created_at": "2025-01-15T10:20:30Z",
                     "updated_at": "2025-01-16T12:00:00Z",
                 }
             ]
         }
-    }
+    )
