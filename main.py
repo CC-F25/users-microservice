@@ -98,7 +98,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5000",                     # Firebase local emulator
         "https://cloud-computing-ui.web.app",        # deployed Firebase site
-        "https://cloud-computing-ui.firebaseapp.com" # alt Firebase domain
+        "https://cloud-computing-ui.firebaseapp.com", # alt Firebase domain
+        "http://localhost:8080",                     # Python http.server
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -194,14 +195,14 @@ def make_health(echo: Optional[str], path_echo: Optional[str]=None) -> Health:
     )
 
 @app.get("/health", response_model=Health)
-def get_health_no_path(echo: str | None = Query(None, description="Optional echo string")):
+def get_health_no_path(echo: Optional[str] = Query(None, description="Optional echo string")):
     # Works because path_echo is optional in the model
     return make_health(echo=echo, path_echo=None)
 
 @app.get("/health/{path_echo}", response_model=Health)
 def get_health_with_path(
     path_echo: str = Path(..., description="Required echo in the URL path"),
-    echo: str | None = Query(None, description="Optional echo string"),
+    echo: Optional[str] = Query(None, description="Optional echo string"),
 ):
     return make_health(echo=echo, path_echo=path_echo)
 
