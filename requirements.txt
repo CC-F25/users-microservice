@@ -23,3 +23,5 @@ google-auth==2.29.0
 google-cloud-pubsub==2.21.0
 proto-plus==1.23.0 
 protobuf==4.25.3
+requests
+SQLAlchemy==2.0.44
