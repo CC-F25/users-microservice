@@ -15,6 +15,10 @@ An atomic microservice of the bookings platform app.
 
 - rename .sample-env to .env
 - fill in the required parameters
+  - MySQL connection (host/user/password/db/port/instance)
+  - Auth: `JWT_SECRET`, `GOOGLE_CLIENT_ID`
+  - Pub/Sub: `GCP_PROJECT_ID`, `PUBSUB_TOPIC`
+  - `FASTAPIPORT` if you want a non-default local port
 
 # Program Execution
 

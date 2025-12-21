@@ -3,47 +3,60 @@ from __future__ import annotations
 import os
 import socket
 from datetime import datetime
-
+import json
+import time
+import uuid
 from typing import Dict, List, Optional
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException, Query, Path, Depends
+from fastapi import FastAPI, HTTPException, Query, Path, Depends, Header
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from dotenv import load_dotenv
 
-# Import Pydantic Models
-from models.health import Health
-from models.user import UserCreate, UserRead, UserUpdate, ListingGroup, HousingPreference
-
-# Import Database connection and SQL Model
-from database_connection import Base, engine, get_db
-from models.user_sql import UserDB
-
-# Google auth
+# Google & Auth
 from jose import jwt, JWTError
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
-import uuid, time
-from fastapi import Header, HTTPException, Depends
-from dotenv import load_dotenv
 from google.cloud import pubsub_v1
-import json
-import time
+
+# Models
+from models.health import Health
+from models.user import UserCreate, UserRead, UserUpdate
+from models.user_sql import UserDB
+from database_connection import Base, engine, get_db
+
 load_dotenv()
+
+
+def get_required_env(name: str) -> str:
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
 
 JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALGO = "HS256"
 JWT_EXP_SECONDS = 3600
-GOOGLE_CLIENT_ID = os.environ["GOOGLE_CLIENT_ID"]
+GOOGLE_CLIENT_ID = get_required_env("GOOGLE_CLIENT_ID")
 PUBSUB_PROJECT = os.getenv("GCP_PROJECT_ID")
 PUBSUB_TOPIC = os.getenv("PUBSUB_TOPIC")
 
 
+def generate_token(user_id: str, email: str, expires_in: int, typ: str):
+    now = int(time.time())
+    payload = {
+        "sub": user_id,
+        "email": email,
+        "iat": now,
+        "exp": now + expires_in,
+        "typ": typ,
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
 
 def generate_jwt(user_id: str, email: str):
-    now = int(time.time())
-    payload = {"sub": user_id, "email": email, "iat": now, "exp": now + JWT_EXP_SECONDS}
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
+    return generate_token(user_id, email, JWT_EXP_SECONDS, "access")
 
 def require_auth(authorization: str = Header(None)):
     if not authorization or not authorization.startswith("Bearer "):
@@ -51,18 +64,28 @@ def require_auth(authorization: str = Header(None)):
     token = authorization.replace("Bearer ", "")
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
+        if payload.get("typ") != "access":
+            raise HTTPException(status_code=401, detail="Invalid token type")
         return payload
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
-publisher = pubsub_v1.PublisherClient()
-topic_path = publisher.topic_path(PUBSUB_PROJECT, PUBSUB_TOPIC)
+publisher = None
+topic_path = None
+if PUBSUB_PROJECT and PUBSUB_TOPIC:
+    publisher = pubsub_v1.PublisherClient()
+    topic_path = publisher.topic_path(PUBSUB_PROJECT, PUBSUB_TOPIC)
+
 def publish_user_event(event_type: str, payload: dict):
     """
     Publishes a JSON event to Google Pub/Sub.
     Works locally (if GOOGLE_APPLICATION_CREDENTIALS is set) or on Cloud Run.
     """
+    if not publisher or not topic_path:
+        print("Pub/Sub publisher not configured; skipping event publish.")
+        return
+
     message = json.dumps({
         "event_type": event_type,
         "timestamp": int(time.time()),
@@ -73,7 +96,7 @@ def publish_user_event(event_type: str, payload: dict):
     print(f"Published event {event_type}, message ID: {future.result()}")
 
 
-port = int(os.environ.get("FASTAPIPORT", 8000))
+port = int(os.environ.get("PORT", 8080))
 
 # -----------------------------------------------------------------------------
 # Database setup
@@ -142,42 +165,72 @@ def test_db_connection(db: Session = Depends(get_db)):
 @app.post("/auth/google")
 def google_login(google_token: str, db: Session = Depends(get_db)):
     """
-    Accepts Google ID token, verifies it, creates user if needed,
-    returns our own JWT.
+    The MASTER Endpoint.
+    1. Verifies Google Token.
+    2. Checks if User exists.
+    3. IF NEW: Creates 'Skeleton User' (Name/Email) & Publishes Event.
+    4. IF EXISTING: Just logs them in.
+    5. Returns JWT.
     """
+    # Verify Google Token
     try:
         google_info = id_token.verify_oauth2_token(
-            google_token,
-            google_requests.Request(),
+            google_token, 
+            google_requests.Request(), 
             GOOGLE_CLIENT_ID
         )
-    except Exception:
+    except ValueError:
         raise HTTPException(status_code=401, detail="Invalid Google token")
 
     email = google_info["email"]
     name = google_info.get("name", "Unknown User")
+    
+    # Check if user exists
+    user_db = db.query(UserDB).filter(UserDB.email == email).first()
 
-    # Find or create user in DB
-    user = db.query(UserDB).filter(UserDB.email == email).first()
-    if not user:
-        user = UserDB(
-            id=str(uuid.uuid4()),
-            name=name,
+    # IF NEW USER: Create & Publish
+    if not user_db:
+        print(f"New user detected: {email}")
+        new_user_id = str(uuid.uuid4())
+        
+        # Create Skeleton User (No phone, no bio yet)
+        user_db = UserDB(
+            id=new_user_id,
             email=email,
-            phone_number=None,
-            housing_preference="none",
-            listing_group="none"
+            name=name,
+            phone_number=None, 
+            bio=None,
+            location=None
         )
-        db.add(user)
+        db.add(user_db)
         db.commit()
-        db.refresh(user)
+        db.refresh(user_db)
 
-    jwt_token = generate_jwt(user.id, user.email)
+        # Publish "User Created" Event
+        try:
+            publish_user_event("USER_CREATED", {
+                "id": new_user_id, 
+                "email": email, 
+            })
+            print(f"Published USER_CREATED event for {email}")
+        except Exception as e:
+            print(f"Warning: Failed to publish event: {e}")
+
+    # Generate JWT
+    access_token = generate_jwt(user_db.id, user_db.email)
+    
+    # Return User Data (Frontend checks if phone_number is null to show profile form)
     return {
-        "jwt": jwt_token,
-        "user": {"id": user.id, "email": user.email, "name": user.name}
+        "access_jwt": access_token, 
+        "user": {
+            "id": user_db.id, 
+            "name": user_db.name, 
+            "email": user_db.email,
+            "phone_number": user_db.phone_number,
+            "bio": user_db.bio,
+            "location": user_db.location
+        }
     }
-
 
 # -----------------------------------------------------------------------------
 # Health endpoints
@@ -209,72 +262,24 @@ def get_health_with_path(
 # Users endpoints
 # -----------------------------------------------------------------------------
 
-@app.post("/users", response_model=UserRead, status_code=201)
-def create_user(payload: UserCreate, db: Session = Depends(get_db)):
-    """
-    Create a new user. ID is optional in the payload; if not provided, it will
-    be generated server-side.
-    """
-    # check if ID already exists
-    if db.query(UserDB).filter(UserDB.id == str(payload.id)).first():
-        raise HTTPException(status_code=400, detail="User with this ID already exists")
-
-    # check if Email already exists
-    if db.query(UserDB).filter(UserDB.email == payload.email).first():
-        raise HTTPException(status_code=400, detail="Email already registered")
-
-    # create SQL Model using the payload's ID
-    new_user = UserDB(
-        id=str(payload.id),
-        name=payload.name,
-        email=payload.email,
-        phone_number=str(payload.phone_number).replace("tel:", ""),
-        housing_preference=payload.housing_preference.value,
-        listing_group=payload.listing_group.value
-    )
-    
-    # add and commit to DB
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    
-    # pub/sub
-    publish_user_event("USER_CREATED", {"id": new_user.id, "email": new_user.email})
-
-    return new_user
-
 @app.get("/users", response_model=List[UserRead])
 def list_users(
     offset: int = 0, 
     limit: int = 10, 
     name: Optional[str] = Query(None, description="Filter by exact name"),
-    listing_group: Optional[ListingGroup] = Query(None, description="Filter by listing group"),
-    housing_preference: Optional[HousingPreference] = Query(None, description="Filter by housing preference"),
     email: Optional[str] = Query(None, description="Filter by email"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
     ) -> List[UserRead]:
     """
-    List all users, optionally filtering by any combination of name, listing_group, housing_preference, and email.
-    All filters are exact match.
+    List users, optionally filtering by name or email.
     """
     query = db.query(UserDB)
     
-    # Filter 1: Name
     if name:
         query = query.filter(UserDB.name == name)
-        
-    # Filter 2: Email
     if email:
         query = query.filter(UserDB.email == email)
-        
-    # Filter 3: Listing Group (Extract string value from Enum)
-    if listing_group:
-        query = query.filter(UserDB.listing_group == listing_group.value)
-        
-    # Filter 4: Housing Preference (Extract string value from Enum)
-    if housing_preference:
-        query = query.filter(UserDB.housing_preference == housing_preference.value)
-        
+    
     # Apply Pagination (Limit/Offset)
     return query.offset(offset).limit(limit).all()
 
@@ -289,40 +294,55 @@ def get_user(user_id: UUID, db: Session = Depends(get_db)):
     return user
 
 @app.patch("/users/{user_id}", response_model=UserRead)
-def update_user(user_id: UUID, update: UserUpdate, db: Session = Depends(get_db)):
+def update_user(
+    user_id: str, 
+    payload: UserUpdate, 
+    db: Session = Depends(get_db), 
+    auth: Dict = Depends(require_auth)):
     """
-    Apply a partial update to the user.
-    Only provided fields are modified; others remain unchanged.
+    Update profile (Phone, Bio, Location)
     """
-    user = db.query(UserDB).filter(UserDB.id == str(user_id)).first()
-    if not user:
+    # Security Check
+    if auth["sub"] != user_id:
+        raise HTTPException(status_code=403, detail="You can only update your own profile")
+
+    # Get User
+    user_db = db.query(UserDB).filter(UserDB.id == user_id).first()
+    if not user_db:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # update fields
-    update_data = update.model_dump(exclude_unset=True)
-    for key, value in update_data.items():
-        if hasattr(value, 'value'):
-            value = value.value
-
-        if key == "phone_number":
-            value = str(value).replace("tel:", "")
-
-        setattr(user, key, value)
-
-    user.updated_at = datetime.utcnow()
+    # Update Fields
+    if payload.name:
+        user_db.name = payload.name
+    
+    # Handle Pydantic PhoneNumber object to String
+    if payload.phone_number:
+        user_db.phone_number = str(payload.phone_number)
+        
+    # New Fields
+    if payload.bio:
+        user_db.bio = payload.bio
+    if payload.location:
+        user_db.location = payload.location
+    
+    user_db.updated_at = datetime.utcnow()
     db.commit()
-    db.refresh(user)
+    db.refresh(user_db)
 
-    # pub/sub
-    publish_user_event("USER_UPDATED", {"id": user.id})
+    # Publish "User Updated" Event
+    publish_user_event("USER_UPDATED", {"id": user_db.id})
 
-    return user
+    return user_db
+
 
 @app.delete("/users/{user_id}")
-def delete_user(user_id: UUID, db: Session = Depends(get_db)):
+def delete_user(user_id: UUID, db: Session = Depends(get_db), auth: Dict = Depends(require_auth)):
     """
     Delete and return a confirmation payload
     """
+    if str(user_id) != auth["sub"]:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this user")
+
     user = db.query(UserDB).filter(UserDB.id == str(user_id)).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
