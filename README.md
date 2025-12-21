@@ -50,7 +50,23 @@ Paste in powershell
 
 3) Paste in powershell
 
-`gcloud run deploy users-microservice --image gcr.io/<\image name> --platform managed --region us-central1 --allow-unauthenticated --add-cloudsql-instances <\image name>:us-central1:users-db-instance --set-env-vars "MYSQL_USER=<\user name>,MYSQL_PASSWORD=<\password>|,MYSQL_DB=users_db,INSTANCE_CONNECTION_NAME=<\instance name>`
+
+```powershell
+gcloud run deploy <service-name> `
+  --image gcr.io/<project-id>/<image-name> `
+  --platform managed `
+  --region <region> `
+  --allow-unauthenticated `
+  --add-cloudsql-instances <project-id>:<region>:<cloudsql-instance-name> `
+  --set-env-vars "MYSQL_USER=<mysql-user>" `
+  --set-env-vars "MYSQL_PASSWORD=<mysql-password>" `
+  --set-env-vars "MYSQL_DB=<mysql-db-name>" `
+  --set-env-vars "INSTANCE_CONNECTION_NAME=<project-id>:<region>:<cloudsql-instance-name>" `
+  --set-env-vars "JWT_SECRET=<jwt-secret>" `
+  --set-env-vars "GOOGLE_CLIENT_ID=<google-client-id>" `
+  --set-env-vars "GCP_PROJECT_ID=<gcp-project-id>" `
+  --set-env-vars "PUBSUB_TOPIC=<pubsub-topic>"
+```
 
 4) Testing connection
 
